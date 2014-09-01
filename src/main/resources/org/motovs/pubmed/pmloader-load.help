@@ -1,0 +1,6 @@
+Usage:
+
+mlloader -d <path to pubmed files> [-i <path to load factor file>]
+
+The pubmed files should have .xml.gz extension. The load factor is CSV file that contain impact factors per
+abbreviated journal per year and is optional.

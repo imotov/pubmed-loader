@@ -1,0 +1,11 @@
+cluster.name: "pubmed"
+medline:
+  host: "localhost"
+  port: 9300
+  bulk:
+    size: 1000
+    threads: 4
+  parsing:
+    threads: 3
+
+
