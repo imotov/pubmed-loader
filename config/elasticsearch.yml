@@ -1,5 +1,5 @@
 cluster.name: "pubmed"
-medline:
+pubmed:
   host: "localhost"
   port: 9300
   bulk:
