@@ -1,6 +1,9 @@
 package org.motovs.pubmed;
 
+import au.com.bytecode.opencsv.CSVReader;
 import org.elasticsearch.action.bulk.BulkProcessor;
+import org.elasticsearch.action.bulk.BulkRequest;
+import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.index.IndexRequestBuilder;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
@@ -16,10 +19,10 @@ import java.io.*;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.Map;
-import java.util.Scanner;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.GZIPInputStream;
 
 import static org.elasticsearch.common.collect.Lists.newArrayList;
@@ -39,6 +42,7 @@ public class MedlineLoader {
 
     private final ExecutorService executor;
 
+    private final AtomicLong current = new AtomicLong();
 
     public MedlineLoader(File ifFile, File dataDir, Settings settings) throws IOException {
         this.dataDir = dataDir;
@@ -50,7 +54,25 @@ public class MedlineLoader {
                 new InetSocketTransportAddress(
                         settings.get("pubmed.host", "localhost"),
                         settings.getAsInt("pubmed.port", 9300)));
-        bulkProcessor = BulkProcessor.builder(client, new BulkListener())
+        bulkProcessor = BulkProcessor.builder(client, new BulkProcessor.Listener() {
+
+            @Override
+            public void beforeBulk(long executionId, BulkRequest request) {
+
+            }
+
+            @Override
+            public void afterBulk(long executionId, BulkRequest request, BulkResponse response) {
+                System.out.println("Processed bulk " + executionId + " success");
+                current.addAndGet(-request.numberOfActions());
+            }
+
+            @Override
+            public void afterBulk(long executionId, BulkRequest request, Throwable failure) {
+                System.out.println("Processed bulk " + executionId + " failure" + failure);
+                current.addAndGet(-request.numberOfActions());
+            }
+        })
                 .setBulkActions(settings.getAsInt("pubmed.bulk.size", 1000))
                 .setConcurrentRequests(settings.getAsInt("pubmed.bulk.threads", 4)).build();
         executor = Executors.newFixedThreadPool(settings.getAsInt("pubmed.parsing.threads", 1));
@@ -58,18 +80,37 @@ public class MedlineLoader {
 
 
     public void loadIf(File file) throws IOException {
-        Scanner sc = new Scanner(file);
-        while (sc.hasNext()) {
-            String line = sc.nextLine();
-            String[] str = line.split(",");
-            ifMap.put(str[0], Float.parseFloat(str[1]));
+        try (CSVReader reader = new CSVReader(new FileReader(file))) {
+            String[] headers = reader.readNext();
+            if (headers == null) {
+                return;
+            }
+            String[] line;
+            while ((line = reader.readNext()) != null) {
+                for(int i=1; i<line.length; i++) {
+                    ifMap.put(line[0] + "-" + headers[i], parseFloat(line[i]));
+                }
+            }
         }
+    }
+
+    public float parseFloat(String str) {
+        try {
+            return Float.parseFloat(str);
+        } catch (NumberFormatException ex) {
+            return 0.0f;
+        }
+
     }
 
     public void process(int skip) throws Exception {
         processDirectory(dataDir, skip);
         executor.shutdown();
         executor.awaitTermination(10, TimeUnit.DAYS);
+        bulkProcessor.flush();
+        while (current.get() > 0) {
+            Thread.sleep(100);
+        }
         bulkProcessor.close();
         bulkProcessor.awaitClose(10, TimeUnit.MINUTES);
         client.close();
@@ -118,6 +159,14 @@ public class MedlineLoader {
         }
     }
 
+    private float impactFactor(String str, int year) {
+        Float impactFactor = ifMap.get(str.toUpperCase() + "-" + year + " Impact Factor");
+        if (impactFactor == null) {
+            return 0.0f;
+        } else {
+            return impactFactor;
+        }
+    }
 
     public void processFile(File file) throws IOException, SAXException, ParserConfigurationException {
         SAXParserFactory spf = SAXParserFactory.newInstance();
@@ -155,7 +204,7 @@ public class MedlineLoader {
                     if (localName.equals("MedlineCitation")) {
                         Float factor = null;
                         if (journalAbbrTitle != null) {
-                            factor = ifMap.get(journalAbbrTitle.toUpperCase());
+                            factor = impactFactor(journalAbbrTitle.toUpperCase(), year);
                         }
                         if (factor == null) {
                             factor = 0f;
@@ -168,6 +217,7 @@ public class MedlineLoader {
                                 .setIndex("pubmed")
                                 .setType("article");
                         bulkProcessor.add(indexRequestBuilder.request());
+                        current.incrementAndGet();
                     }
                     currentName.pop();
                 }

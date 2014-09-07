@@ -32,6 +32,13 @@ curl -XPUT "http://$HOST:9200/pubmed" -d '{
                 },
                 "if" : {
                     "type" : "float"
+                },
+                "journal-abbr" : {
+                    "type" : "string",
+                    "index": "not_analyzed"
+                },
+                "year" : {
+                    "type" : "long"
                 }
             }
         }

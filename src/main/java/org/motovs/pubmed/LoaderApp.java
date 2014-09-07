@@ -19,7 +19,7 @@ public class LoaderApp extends CliTool {
                         .options(
                                 option("d", "data").hasArg(true).required(true),
                                 option("i", "impact-factor").hasArg(true),
-                                option("s", "skip").hasArg(true)
+                                option("b", "begin").hasArg(true)
                         ))
                 .build());
     }

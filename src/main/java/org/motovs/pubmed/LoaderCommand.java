@@ -27,7 +27,7 @@ public class LoaderCommand extends CliTool.Command {
             impactFactorFile = null;
         }
         pubmedFilesDir = new File(commandLine.getOptionValue("d", "pubmedfiles"));
-        skipCount = Integer.parseInt(commandLine.getOptionValue("s", "0"));
+        skipCount = Integer.parseInt(commandLine.getOptionValue("b", "0"));
     }
 
     @Override
